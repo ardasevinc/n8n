@@ -22,4 +22,11 @@ export class WorkflowComposer {
 		await responsePromise;
 		await this.n8n.notifications.waitForNotificationAndClose(notificationMessage);
 	}
+
+	async createWorkflow(name?: string) {
+		await this.n8n.workflows.clickAddWorklowButton();
+		const workflowName = name ?? 'My New Workflow';
+		await this.n8n.canvas.setWorkflowName(workflowName);
+		await this.n8n.canvas.saveWorkflow();
+	}
 }

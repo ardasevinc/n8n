@@ -7,6 +7,10 @@ export class CanvasPage extends BasePage {
 		return this.page.getByRole('button', { name: 'Save' });
 	}
 
+	canvasAddButton(): Locator {
+		return this.page.getByTestId('canvas-add-button');
+	}
+
 	nodeCreatorItemByName(text: string): Locator {
 		return this.page.getByTestId('node-creator-item-name').getByText(text, { exact: true });
 	}
@@ -113,5 +117,10 @@ export class CanvasPage extends BasePage {
 
 	async clickExecutionsTab(): Promise<void> {
 		await this.page.getByRole('radio', { name: 'Executions' }).click();
+	}
+
+	async setWorkflowName(name: string): Promise<void> {
+		await this.clickByTestId('inline-edit-preview');
+		await this.fillByTestId('inline-edit-input', name);
 	}
 }

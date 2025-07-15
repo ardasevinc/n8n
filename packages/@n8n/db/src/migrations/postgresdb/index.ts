@@ -90,6 +90,7 @@ import { AddProjectDescriptionColumn1747824239000 } from '../common/174782423900
 import { AddLastActiveAtColumnToUser1750252139166 } from '../common/1750252139166-AddLastActiveAtColumnToUser';
 import { AddScopeTables1750252139166 } from '../common/1750252139166-AddScopeTables';
 import { AddRolesTables1750252139167 } from '../common/1750252139167-AddRolesTables';
+import { LinkGlobalRoleToUserTable1750252139168 } from '../common/1750252139168-LinkGlobalRoleToUserTable';
 import type { Migration } from '../migration-types';
 
 export const postgresMigrations: Migration[] = [
@@ -185,4 +186,5 @@ export const postgresMigrations: Migration[] = [
 	AddLastActiveAtColumnToUser1750252139166,
 	AddScopeTables1750252139166,
 	AddRolesTables1750252139167,
+	LinkGlobalRoleToUserTable1750252139168,
 ];

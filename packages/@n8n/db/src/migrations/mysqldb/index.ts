@@ -89,6 +89,7 @@ import { DropRoleTable1745934666077 } from '../common/1745934666077-DropRoleTabl
 import { AddProjectDescriptionColumn1747824239000 } from '../common/1747824239000-AddProjectDescriptionColumn';
 import { AddLastActiveAtColumnToUser1750252139166 } from '../common/1750252139166-AddLastActiveAtColumnToUser';
 import { AddScopeTables1750252139166 } from '../common/1750252139166-AddScopeTables';
+import { AddRolesTables1750252139167 } from '../common/1750252139167-AddRolesTables';
 import type { Migration } from '../migration-types';
 import { UpdateParentFolderIdColumn1740445074052 } from '../mysqldb/1740445074052-UpdateParentFolderIdColumn';
 
@@ -185,4 +186,5 @@ export const mysqlMigrations: Migration[] = [
 	AddProjectDescriptionColumn1747824239000,
 	AddLastActiveAtColumnToUser1750252139166,
 	AddScopeTables1750252139166,
+	AddRolesTables1750252139167,
 ];

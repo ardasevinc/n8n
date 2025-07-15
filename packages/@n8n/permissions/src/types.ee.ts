@@ -64,6 +64,7 @@ export type AllRoleTypes = GlobalRole | ProjectRole | WorkflowSharingRole | Cred
 type RoleObject<T extends AllRoleTypes> = {
 	role: T;
 	name: string;
+	description: string;
 	scopes: Scope[];
 	licensed: boolean;
 };

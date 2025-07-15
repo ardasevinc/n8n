@@ -16,7 +16,7 @@ import type { MigrationContext, ReversibleMigration } from '../migration-types';
 export class AddScopeTables1750252139166 implements ReversibleMigration {
 	async up({ schemaBuilder: { createTable, column } }: MigrationContext) {
 		await createTable('scope').withColumns(
-			column('slug').varchar(128).primary.notNull,
+			column('slug').text.primary.notNull,
 			column('displayName').text.default(null),
 			column('description').text.default(null),
 		);

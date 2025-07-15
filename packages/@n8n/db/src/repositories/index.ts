@@ -18,6 +18,8 @@ export { InvalidAuthTokenRepository } from './invalid-auth-token.repository';
 export { LicenseMetricsRepository } from './license-metrics.repository';
 export { ProjectRelationRepository } from './project-relation.repository';
 export { ProjectRepository } from './project.repository';
+export { ProjectRoleRepository } from './project-role.repository';
+export { GlobalRoleRepository } from './global-role.repository';
 export { ProcessedDataRepository } from './processed-data.repository';
 export { SettingsRepository } from './settings.repository';
 export { TagRepository } from './tag.repository';

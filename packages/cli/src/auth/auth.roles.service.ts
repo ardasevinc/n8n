@@ -71,7 +71,6 @@ export class AuthRolesService {
 				displayName: true,
 				description: true,
 				systemRole: true,
-				scopes: true,
 			},
 			where: {
 				systemRole: true,

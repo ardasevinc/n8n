@@ -7,7 +7,9 @@ import { Scope } from './scope';
 	name: 'project_role',
 })
 export class ProjectRole extends BaseRole {
-	@ManyToMany(() => Scope)
+	@ManyToMany(() => Scope, {
+		eager: true,
+	})
 	@JoinTable({
 		name: 'project_role_scope',
 		joinColumn: { name: 'role_slug', referencedColumnName: 'slug' },

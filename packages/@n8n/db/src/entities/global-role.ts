@@ -7,7 +7,9 @@ import { Scope } from './scope';
 	name: 'global_role',
 })
 export class GlobalRole extends BaseRole {
-	@ManyToMany(() => Scope)
+	@ManyToMany(() => Scope, {
+		eager: true,
+	})
 	@JoinTable({
 		name: 'global_role_scope',
 		joinColumn: { name: 'role_slug', referencedColumnName: 'slug' },

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 import * as ts from 'typescript';
@@ -220,19 +220,37 @@ class ASTNodeSchemaExtractor {
     const fileName = path.basename(filePath, '.node.ts');
     const dirName = path.basename(path.dirname(filePath));
     
-    // Prefer main/non-versioned files
-    if (!fileName.match(/[Vv]\d+$/) && !dirName.match(/[Vv]\d+$/)) {
-      priority += 100;
+    // FIXED: Check if this is a wrapper file and penalize it
+    const isWrapper = schema.extractionNotes.some(note => note.includes('Wrapper file: VersionedNodeType'));
+    if (isWrapper) {
+      priority -= 100; // Strong penalty for wrapper files
     }
     
-    // Prefer higher version numbers
-    const versionMatch = (fileName + dirName).match(/[Vv]?(\d+)$/);
-    if (versionMatch) {
-      const versionNum = parseInt(versionMatch[1]);
-      priority += versionNum * 10;
+    // ENHANCED: Extract version numbers from multiple patterns
+    let versionNum = 0;
+    
+    // Try file name patterns: PostgresV2, HttpRequestV3, etc.
+    const fileVersionMatch = fileName.match(/[Vv](\d+)$/);
+    if (fileVersionMatch) {
+      versionNum = parseInt(fileVersionMatch[1]);
     }
     
-    // Prefer schemas with more parameters
+    // Try directory patterns: /v2/, /V3/, /v4/, etc. 
+    const dirVersionMatch = dirName.match(/^[Vv](\d+)$/);
+    if (dirVersionMatch) {
+      versionNum = Math.max(versionNum, parseInt(dirVersionMatch[1]));
+    }
+    
+    // IMPROVED: Higher multiplier for version numbers to prioritize newer versions
+    if (versionNum > 0) {
+      priority += versionNum * 50; // Increased from 10 to 50
+    } else {
+      // Files without clear version numbers get moderate priority
+      // This handles legacy nodes that don't use versioned naming
+      priority += 25;
+    }
+    
+    // Prefer schemas with more parameters (indicates richer extraction)
     priority += schema.parameters.length * 5;
     
     // Prefer higher quality extractions
@@ -240,6 +258,13 @@ class ASTNodeSchemaExtractor {
       case 'high': priority += 50; break;
       case 'medium': priority += 25; break;
       case 'low': priority += 0; break;
+    }
+    
+    // BONUS: Prefer files in versioned directories (v2+/V2+ structure indicates newer implementations)
+    const pathParts = filePath.split(path.sep);
+    const hasVersionedDir = pathParts.some(part => part.match(/^[Vv][2-9]$/));
+    if (hasVersionedDir) {
+      priority += 30;
     }
     
     return priority;
@@ -276,8 +301,31 @@ class ASTNodeSchemaExtractor {
       this.program = program;
       this.checker = program.getTypeChecker();
       
-      // Extract node schema using AST
+      // Check if this is a VersionedNodeType wrapper
+      const wrapperInfo = this.detectVersionedNodeWrapper(sourceFile);
+      
+      if (wrapperInfo.isWrapper && wrapperInfo.defaultVersion) {
+        // This is a wrapper file - find the actual implementation
+        const implementationFile = this.findImplementationFileForVersion(filePath, wrapperInfo.defaultVersion);
+        
+        if (implementationFile) {
+          console.log(`  ℹ️  Detected wrapper ${path.basename(filePath)} (defaultVersion: ${wrapperInfo.defaultVersion}) -> redirecting to ${path.basename(implementationFile)}`);
+          
+          // Parse the implementation file instead
+          return await this.parseNodeFile(implementationFile);
+        } else {
+          console.log(`  ⚠️  Wrapper ${path.basename(filePath)} found but couldn't locate implementation for version ${wrapperInfo.defaultVersion}`);
+          // Fall back to parsing the wrapper itself, but mark it appropriately
+        }
+      }
+      
+      // Extract node schema using AST (either from wrapper fallback or non-wrapper file)
       const nodeSchema = await this.extractNodeSchemaAST(sourceFile, filePath);
+      
+      // Mark wrapper files in extraction notes
+      if (wrapperInfo.isWrapper && nodeSchema) {
+        nodeSchema.extractionNotes.push(`Wrapper file: VersionedNodeType with defaultVersion ${wrapperInfo.defaultVersion || 'unspecified'}`);
+      }
       
       return nodeSchema;
     } catch (error) {
@@ -560,10 +608,120 @@ class ASTNodeSchemaExtractor {
   private detectV2Structure(filePath: string): boolean {
     // Check if this is a v2+ node by looking for version directory structure
     const pathParts = filePath.split(path.sep);
-    const hasV2Dir = pathParts.some(part => part.match(/^v[2-9]$/) || part.match(/^V[2-9]$/));
+    const fileName = path.basename(filePath, '.node.ts');
+    
+    // Check for versioned directories: v2, v3, V2, V3, V4, etc.
+    const hasVersionedDir = pathParts.some(part => part.match(/^[Vv][2-9]$/) || part.match(/^[Vv]\d{2,}$/));
+    
+    // Check for actions directory (indicates v2+ structure)
     const hasActionsDir = pathParts.some(part => part === 'actions');
     
-    return hasV2Dir || hasActionsDir;
+    // Check for versioned file names: PostgresV2, HttpRequestV3, etc.
+    const hasVersionedFileName = fileName.match(/[Vv][2-9]$/) || fileName.match(/[Vv]\d{2,}$/);
+    
+    // Check for multi-digit versions like V10, V11, etc.
+    const hasHighVersionDir = pathParts.some(part => part.match(/^[Vv]\d{2,}$/));
+    const hasHighVersionFile = fileName.match(/[Vv]\d{2,}$/);
+    
+    return hasVersionedDir || hasActionsDir || hasVersionedFileName || hasHighVersionDir || hasHighVersionFile;
+  }
+
+  private detectVersionedNodeWrapper(sourceFile: ts.SourceFile): { isWrapper: boolean, defaultVersion?: number } {
+    let isWrapper = false;
+    let defaultVersion: number | undefined;
+
+    const visit = (node: ts.Node) => {
+      // Look for class declarations that extend VersionedNodeType
+      if (ts.isClassDeclaration(node)) {
+        const heritage = node.heritageClauses;
+        if (heritage) {
+          for (const clause of heritage) {
+            if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
+              for (const type of clause.types) {
+                if (ts.isIdentifier(type.expression) && type.expression.text === 'VersionedNodeType') {
+                  isWrapper = true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Look for defaultVersion assignment in object literals
+      if (ts.isPropertyAssignment(node) && node.name && ts.isIdentifier(node.name)) {
+        if (node.name.text === 'defaultVersion' && ts.isNumericLiteral(node.initializer)) {
+          defaultVersion = parseFloat(node.initializer.text);
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return { isWrapper, defaultVersion };
+  }
+
+  private findImplementationFileForVersion(wrapperFilePath: string, version: number): string | null {
+    const nodeDir = path.dirname(wrapperFilePath);
+    const baseName = path.basename(wrapperFilePath, '.node.ts');
+    
+    // Special mapping logic for nodes with non-linear version progression
+    let targetVersion = Math.floor(version);
+    
+    // HTTP Request: versions 4+ use V3 implementation
+    if (baseName === 'HttpRequest' && version >= 4) {
+      targetVersion = 3;
+    }
+    
+    // Google Sheets: versions 4+ use V2 implementation  
+    if (baseName === 'GoogleSheets' && version >= 3) {
+      targetVersion = 2;
+    }
+    
+    // Google Drive: versions 3+ use V3 implementation
+    if (baseName === 'GoogleDrive' && version >= 3) {
+      targetVersion = 3;
+    }
+    
+    // Common version patterns to try
+    const versionPatterns = [
+      `V${targetVersion}`, // V2, V3, V4
+      `v${targetVersion}`, // v2, v3, v4  
+      `${baseName}V${targetVersion}` // PostgresV2, HttpRequestV3
+    ];
+
+    for (const pattern of versionPatterns) {
+      // Try subdirectory pattern: /V2/HttpRequestV2.node.ts
+      const subDirPath = path.join(nodeDir, pattern, `${baseName}${pattern}.node.ts`);
+      if (existsSync(subDirPath)) {
+        return subDirPath;
+      }
+
+      // Try direct pattern: /v2/PostgresV2.node.ts  
+      const directPath = path.join(nodeDir, pattern.toLowerCase(), `${baseName}${pattern}.node.ts`);
+      if (existsSync(directPath)) {
+        return directPath;
+      }
+    }
+
+    // Fallback: look for any versioned file in subdirectories
+    try {
+      const entries = readdirSync(nodeDir);
+      for (const entry of entries) {
+        if (entry.match(/^[Vv]\d+$/)) {
+          const versionDir = path.join(nodeDir, entry);
+          const files = readdirSync(versionDir);
+          const nodeFile = files.find(f => f.endsWith('.node.ts') && f.includes(baseName));
+          if (nodeFile) {
+            return path.join(versionDir, nodeFile);
+          }
+        }
+      }
+    } catch (error) {
+      // Directory doesn't exist or can't be read
+    }
+
+    return null;
   }
 
   private async handleV2NodeStructure(filePath: string, extractionNotes: string[]): Promise<ExtractedParameterSchema[]> {

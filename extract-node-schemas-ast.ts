@@ -463,6 +463,20 @@ class ASTNodeSchemaExtractor {
     if (ts.isArrayLiteralExpression(node)) {
       return node.elements.map(el => this.extractValueFromNode(el)).filter(v => v !== undefined);
     }
+    // ENHANCED: Handle object literals for nested structures like displayOptions
+    if (ts.isObjectLiteralExpression(node)) {
+      const obj: any = {};
+      for (const prop of node.properties) {
+        if (ts.isPropertyAssignment(prop) && prop.name && ts.isIdentifier(prop.name)) {
+          const propName = prop.name.text;
+          const value = this.extractValueFromNode(prop.initializer);
+          if (value !== undefined) {
+            obj[propName] = value;
+          }
+        }
+      }
+      return Object.keys(obj).length > 0 ? obj : undefined;
+    }
     return undefined;
   }
 
@@ -480,9 +494,57 @@ class ASTNodeSchemaExtractor {
     const importedProperties = await this.resolveImportedProperties(sourceFile, filePath, extractionNotes);
     parameters.push(...importedProperties);
     
-    this.database.extractionStats.totalParametersExtracted += parameters.length;
+    // ENHANCED: Expand conditional parameters based on displayOptions
+    const expandedParameters = this.expandConditionalParameters(parameters, extractionNotes);
     
-    return parameters;
+    this.database.extractionStats.totalParametersExtracted += expandedParameters.length;
+    
+    return expandedParameters;
+  }
+
+  private expandConditionalParameters(parameters: ExtractedParameterSchema[], extractionNotes: string[]): ExtractedParameterSchema[] {
+    const expandedParameters: ExtractedParameterSchema[] = [...parameters];
+    let conditionalCount = 0;
+
+    // Find parameters with displayOptions that create conditional visibility
+    for (const param of parameters) {
+      if (param.displayOptions?.show) {
+        const showConditions = param.displayOptions.show;
+        
+        // For each show condition, create virtual parameters to represent the conditional state
+        for (const [conditionKey, conditionValues] of Object.entries(showConditions)) {
+          if (Array.isArray(conditionValues)) {
+            for (const value of conditionValues) {
+              // Create a conditional variant of this parameter
+              const conditionalParam: ExtractedParameterSchema = {
+                ...param,
+                name: `${param.name}_when_${conditionKey}_${value}`,
+                displayName: `${param.displayName} (when ${conditionKey}=${value})`,
+                exampleValue: param.exampleValue,
+                workflowJsonStructure: {
+                  ...param.workflowJsonStructure,
+                  parameterName: param.name, // Keep original name for workflow JSON
+                  conditionalContext: {
+                    condition: conditionKey,
+                    value: value,
+                    description: `Only visible when ${conditionKey} is set to ${value}`
+                  }
+                }
+              };
+              
+              expandedParameters.push(conditionalParam);
+              conditionalCount++;
+            }
+          }
+        }
+      }
+    }
+
+    if (conditionalCount > 0) {
+      extractionNotes.push(`🔀 Expanded ${conditionalCount} conditional parameters from displayOptions.show`);
+    }
+
+    return expandedParameters;
   }
 
   private findDirectProperties(sourceFile: ts.SourceFile): ExtractedParameterSchema[] {
